@@ -66,7 +66,7 @@ type Public struct {
 
 // Encode serializes a Public structure in TPM wire format.
 func (p Public) Encode() ([]byte, error) {
-	head, err := tpmutil.Pack(p.Type, p.NameAlg, p.Attributes, p.AuthPolicy)
+	head, err := tpmutil.TPM20.Pack(p.Type, p.NameAlg, p.Attributes, p.AuthPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("encoding Type, NameAlg, Attributes, AuthPolicy: %v", err)
 	}
@@ -78,7 +78,7 @@ func (p Public) Encode() ([]byte, error) {
 		// We only support "keyedHash" objects for the purposes of
 		// creating "Sealed Data Blobs".
 		var unique uint16
-		params, err = tpmutil.Pack(AlgNull, unique)
+		params, err = tpmutil.TPM20.Pack(AlgNull, unique)
 	case AlgECC:
 		params, err = p.ECCParameters.encode()
 	default:
@@ -96,7 +96,7 @@ func DecodePublic(buf []byte) (Public, error) {
 	in := bytes.NewBuffer(buf)
 	var pub Public
 	var err error
-	if err = tpmutil.UnpackBuf(in, &pub.Type, &pub.NameAlg, &pub.Attributes, &pub.AuthPolicy); err != nil {
+	if err = tpmutil.TPM20.UnpackBuf(in, &pub.Type, &pub.NameAlg, &pub.Attributes, &pub.AuthPolicy); err != nil {
 		return pub, fmt.Errorf("decoding TPMT_PUBLIC: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func (p *RSAParams) encode() ([]byte, error) {
 	if p.encodeDefaultExponentAsZero && exp == defaultRSAExponent {
 		exp = 0
 	}
-	rest, err := tpmutil.Pack(p.KeyBits, exp)
+	rest, err := tpmutil.TPM20.Pack(p.KeyBits, exp)
 	if err != nil {
 		return nil, fmt.Errorf("encoding KeyBits, Exponent: %v", err)
 	}
@@ -164,7 +164,7 @@ func (p *RSAParams) encode() ([]byte, error) {
 	if p.Modulus != nil {
 		mod = p.Modulus.Bytes()
 	}
-	unique, err := tpmutil.Pack(mod)
+	unique, err := tpmutil.TPM20.Pack(mod)
 	if err != nil {
 		return nil, fmt.Errorf("encoding Modulus: %v", err)
 	}
@@ -183,7 +183,7 @@ func decodeRSAParams(in *bytes.Buffer) (*RSAParams, error) {
 		return nil, fmt.Errorf("decoding Sign: %v", err)
 	}
 	var modBytes []byte
-	if err := tpmutil.UnpackBuf(in, &params.KeyBits, &params.Exponent, &modBytes); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &params.KeyBits, &params.Exponent, &modBytes); err != nil {
 		return nil, fmt.Errorf("decoding KeyBits, Exponent, Modulus: %v", err)
 	}
 	if params.Exponent == 0 {
@@ -236,7 +236,7 @@ func (p *ECCParams) encode() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding Sign: %v", err)
 	}
-	curve, err := tpmutil.Pack(p.CurveID)
+	curve, err := tpmutil.TPM20.Pack(p.CurveID)
 	if err != nil {
 		return nil, fmt.Errorf("encoding CurveID: %v", err)
 	}
@@ -244,7 +244,7 @@ func (p *ECCParams) encode() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding KDF: %v", err)
 	}
-	point, err := tpmutil.Pack(p.Point.x().Bytes(), p.Point.y().Bytes())
+	point, err := tpmutil.TPM20.Pack(p.Point.x().Bytes(), p.Point.y().Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("encoding Point: %v", err)
 	}
@@ -261,14 +261,14 @@ func decodeECCParams(in *bytes.Buffer) (*ECCParams, error) {
 	if params.Sign, err = decodeSigScheme(in); err != nil {
 		return nil, fmt.Errorf("decoding Sign: %v", err)
 	}
-	if err := tpmutil.UnpackBuf(in, &params.CurveID); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &params.CurveID); err != nil {
 		return nil, fmt.Errorf("decoding CurveID: %v", err)
 	}
 	if params.KDF, err = decodeKDFScheme(in); err != nil {
 		return nil, fmt.Errorf("decoding KDF: %v", err)
 	}
 	var x, y []byte
-	if err := tpmutil.UnpackBuf(in, &x, &y); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &x, &y); err != nil {
 		return nil, fmt.Errorf("decoding Point: %v", err)
 	}
 	params.Point.X = new(big.Int).SetBytes(x)
@@ -285,20 +285,20 @@ type SymScheme struct {
 
 func (s *SymScheme) encode() ([]byte, error) {
 	if s == nil || s.Alg.IsNull() {
-		return tpmutil.Pack(AlgNull)
+		return tpmutil.TPM20.Pack(AlgNull)
 	}
-	return tpmutil.Pack(s.Alg, s.KeyBits, s.Mode)
+	return tpmutil.TPM20.Pack(s.Alg, s.KeyBits, s.Mode)
 }
 
 func decodeSymScheme(in *bytes.Buffer) (*SymScheme, error) {
 	var scheme SymScheme
-	if err := tpmutil.UnpackBuf(in, &scheme.Alg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Alg); err != nil {
 		return nil, fmt.Errorf("decoding Alg: %v", err)
 	}
 	if scheme.Alg == AlgNull {
 		return nil, nil
 	}
-	if err := tpmutil.UnpackBuf(in, &scheme.KeyBits, &scheme.Mode); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.KeyBits, &scheme.Mode); err != nil {
 		return nil, fmt.Errorf("decoding KeyBits, Mode: %v", err)
 	}
 	return &scheme, nil
@@ -313,27 +313,27 @@ type SigScheme struct {
 
 func (s *SigScheme) encode() ([]byte, error) {
 	if s == nil || s.Alg.IsNull() {
-		return tpmutil.Pack(AlgNull)
+		return tpmutil.TPM20.Pack(AlgNull)
 	}
 	if s.Alg.UsesCount() {
-		return tpmutil.Pack(s.Alg, s.Hash, s.Count)
+		return tpmutil.TPM20.Pack(s.Alg, s.Hash, s.Count)
 	}
-	return tpmutil.Pack(s.Alg, s.Hash)
+	return tpmutil.TPM20.Pack(s.Alg, s.Hash)
 }
 
 func decodeSigScheme(in *bytes.Buffer) (*SigScheme, error) {
 	var scheme SigScheme
-	if err := tpmutil.UnpackBuf(in, &scheme.Alg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Alg); err != nil {
 		return nil, fmt.Errorf("decoding Alg: %v", err)
 	}
 	if scheme.Alg == AlgNull {
 		return nil, nil
 	}
-	if err := tpmutil.UnpackBuf(in, &scheme.Hash); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Hash); err != nil {
 		return nil, fmt.Errorf("decoding Hash: %v", err)
 	}
 	if scheme.Alg.UsesCount() {
-		if err := tpmutil.UnpackBuf(in, &scheme.Count); err != nil {
+		if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Count); err != nil {
 			return nil, fmt.Errorf("decoding Count: %v", err)
 		}
 	}
@@ -348,20 +348,20 @@ type KDFScheme struct {
 
 func (s *KDFScheme) encode() ([]byte, error) {
 	if s == nil || s.Alg.IsNull() {
-		return tpmutil.Pack(AlgNull)
+		return tpmutil.TPM20.Pack(AlgNull)
 	}
-	return tpmutil.Pack(s.Alg, s.Hash)
+	return tpmutil.TPM20.Pack(s.Alg, s.Hash)
 }
 
 func decodeKDFScheme(in *bytes.Buffer) (*KDFScheme, error) {
 	var scheme KDFScheme
-	if err := tpmutil.UnpackBuf(in, &scheme.Alg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Alg); err != nil {
 		return nil, fmt.Errorf("decoding Alg: %v", err)
 	}
 	if scheme.Alg == AlgNull {
 		return nil, nil
 	}
-	if err := tpmutil.UnpackBuf(in, &scheme.Hash); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &scheme.Hash); err != nil {
 		return nil, fmt.Errorf("decoding Hash: %v", err)
 	}
 	return &scheme, nil
@@ -377,19 +377,19 @@ type Signature struct {
 
 func decodeSignature(in *bytes.Buffer) (*Signature, error) {
 	var sig Signature
-	if err := tpmutil.UnpackBuf(in, &sig.Alg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &sig.Alg); err != nil {
 		return nil, fmt.Errorf("decoding Alg: %v", err)
 	}
 	switch sig.Alg {
 	case AlgRSASSA:
 		sig.RSA = new(SignatureRSA)
-		if err := tpmutil.UnpackBuf(in, sig.RSA); err != nil {
+		if err := tpmutil.TPM20.UnpackBuf(in, sig.RSA); err != nil {
 			return nil, fmt.Errorf("decoding RSA: %v", err)
 		}
 	case AlgECDSA:
 		sig.ECC = new(SignatureECC)
 		var r, s []byte
-		if err := tpmutil.UnpackBuf(in, &sig.ECC.HashAlg, &r, &s); err != nil {
+		if err := tpmutil.TPM20.UnpackBuf(in, &sig.ECC.HashAlg, &r, &s); err != nil {
 			return nil, fmt.Errorf("decoding ECC: %v", err)
 		}
 		sig.ECC.R = big.NewInt(0).SetBytes(r)
@@ -426,7 +426,7 @@ func (p Private) Encode() ([]byte, error) {
 	if p.Type.IsNull() {
 		return nil, nil
 	}
-	return tpmutil.Pack(p)
+	return tpmutil.TPM20.Pack(p)
 }
 
 type tpmtSigScheme struct {
@@ -452,7 +452,7 @@ func DecodeAttestationData(in []byte) (*AttestationData, error) {
 	buf := bytes.NewBuffer(in)
 
 	var ad AttestationData
-	if err := tpmutil.UnpackBuf(buf, &ad.Magic, &ad.Type); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(buf, &ad.Magic, &ad.Type); err != nil {
 		return nil, fmt.Errorf("decoding Magic/Type: %v", err)
 	}
 	n, err := decodeName(buf)
@@ -460,7 +460,7 @@ func DecodeAttestationData(in []byte) (*AttestationData, error) {
 		return nil, fmt.Errorf("decoding QualifiedSigner: %v", err)
 	}
 	ad.QualifiedSigner = *n
-	if err := tpmutil.UnpackBuf(buf, &ad.ExtraData, &ad.ClockInfo, &ad.FirmwareVersion); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(buf, &ad.ExtraData, &ad.ClockInfo, &ad.FirmwareVersion); err != nil {
 		return nil, fmt.Errorf("decoding ExtraData/ClockInfo/FirmwareVersion: %v", err)
 	}
 
@@ -485,7 +485,7 @@ func DecodeAttestationData(in []byte) (*AttestationData, error) {
 
 // Encode serializes an AttestationData structure in TPM wire format.
 func (ad AttestationData) Encode() ([]byte, error) {
-	head, err := tpmutil.Pack(ad.Magic, ad.Type)
+	head, err := tpmutil.TPM20.Pack(ad.Magic, ad.Type)
 	if err != nil {
 		return nil, fmt.Errorf("encoding Magic, Type: %v", err)
 	}
@@ -493,7 +493,7 @@ func (ad AttestationData) Encode() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding QualifiedSigner: %v", err)
 	}
-	tail, err := tpmutil.Pack(ad.ExtraData, ad.ClockInfo, ad.FirmwareVersion)
+	tail, err := tpmutil.TPM20.Pack(ad.ExtraData, ad.ClockInfo, ad.FirmwareVersion)
 	if err != nil {
 		return nil, fmt.Errorf("encoding ExtraData, ClockInfo, FirmwareVersion: %v", err)
 	}
@@ -533,7 +533,7 @@ func decodeCreationInfo(in *bytes.Buffer) (*CreationInfo, error) {
 	}
 	ci.Name = *n
 
-	if err := tpmutil.UnpackBuf(in, &ci.OpaqueDigest); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &ci.OpaqueDigest); err != nil {
 		return nil, fmt.Errorf("decoding Digest: %v", err)
 	}
 
@@ -546,7 +546,7 @@ func (ci CreationInfo) encode() ([]byte, error) {
 		return nil, fmt.Errorf("encoding Name: %v", err)
 	}
 
-	d, err := tpmutil.Pack(ci.OpaqueDigest)
+	d, err := tpmutil.TPM20.Pack(ci.OpaqueDigest)
 	if err != nil {
 		return nil, fmt.Errorf("encoding Digest: %v", err)
 	}
@@ -601,11 +601,11 @@ type IDObject struct {
 func (o *IDObject) Encode() ([]byte, error) {
 	// encIdentity is packed raw, as the bytes representing the size
 	// of the credential value are present within the encrypted blob.
-	d, err := tpmutil.Pack(o.IntegrityHMAC, tpmutil.RawBytes(o.EncIdentity))
+	d, err := tpmutil.TPM20.Pack(o.IntegrityHMAC, tpmutil.RawBytes(o.EncIdentity))
 	if err != nil {
 		return nil, fmt.Errorf("encoding IntegrityHMAC, EncIdentity: %v", err)
 	}
-	return tpmutil.Pack(d)
+	return tpmutil.TPM20.Pack(d)
 }
 
 // CreationData describes the attributes and environment for an object created
@@ -625,7 +625,7 @@ func (cd *CreationData) encode() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding PCRSelection: %v", err)
 	}
-	d, err := tpmutil.Pack(cd.PCRDigest, cd.Locality, cd.ParentNameAlg)
+	d, err := tpmutil.TPM20.Pack(cd.PCRDigest, cd.Locality, cd.ParentNameAlg)
 	if err != nil {
 		return nil, fmt.Errorf("encoding PCRDigest, Locality, ParentNameAlg: %v", err)
 	}
@@ -637,7 +637,7 @@ func (cd *CreationData) encode() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding ParentQualifiedName: %v", err)
 	}
-	o, err := tpmutil.Pack(cd.OutsideInfo)
+	o, err := tpmutil.TPM20.Pack(cd.OutsideInfo)
 	if err != nil {
 		return nil, fmt.Errorf("encoding OutsideInfo: %v", err)
 	}
@@ -656,7 +656,7 @@ func DecodeCreationData(buf []byte) (*CreationData, error) {
 	}
 	out.PCRSelection = sel
 
-	if err := tpmutil.UnpackBuf(in, &out.PCRDigest, &out.Locality, &out.ParentNameAlg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &out.PCRDigest, &out.Locality, &out.ParentNameAlg); err != nil {
 		return nil, fmt.Errorf("decoding PCRDigest, Locality, ParentNameAlg: %v", err)
 	}
 
@@ -670,7 +670,7 @@ func DecodeCreationData(buf []byte) (*CreationData, error) {
 	}
 	out.ParentQualifiedName = *n
 
-	if err := tpmutil.UnpackBuf(in, &out.OutsideInfo); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &out.OutsideInfo); err != nil {
 		return nil, fmt.Errorf("decoding OutsideInfo: %v", err)
 	}
 
@@ -686,7 +686,7 @@ type Name struct {
 
 func decodeName(in *bytes.Buffer) (*Name, error) {
 	var nameBuf []byte
-	if err := tpmutil.UnpackBuf(in, &nameBuf); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &nameBuf); err != nil {
 		return nil, err
 	}
 
@@ -696,7 +696,7 @@ func decodeName(in *bytes.Buffer) (*Name, error) {
 		// No name is present.
 	case 4:
 		name.Handle = new(tpmutil.Handle)
-		if err := tpmutil.UnpackBuf(bytes.NewBuffer(nameBuf), name.Handle); err != nil {
+		if err := tpmutil.TPM20.UnpackBuf(bytes.NewBuffer(nameBuf), name.Handle); err != nil {
 			return nil, fmt.Errorf("decoding Handle: %v", err)
 		}
 	default:
@@ -714,7 +714,7 @@ func (n Name) encode() ([]byte, error) {
 	var err error
 	switch {
 	case n.Handle != nil:
-		if buf, err = tpmutil.Pack(*n.Handle); err != nil {
+		if buf, err = tpmutil.TPM20.Pack(*n.Handle); err != nil {
 			return nil, fmt.Errorf("encoding Handle: %v", err)
 		}
 	case n.Digest != nil:
@@ -724,7 +724,7 @@ func (n Name) encode() ([]byte, error) {
 	default:
 		// Name is empty, which is valid.
 	}
-	return tpmutil.Pack(buf)
+	return tpmutil.TPM20.Pack(buf)
 }
 
 // MatchesPublic compares Digest in Name against given Public structure. Note:
@@ -757,7 +757,7 @@ type HashValue struct {
 
 func decodeHashValue(in *bytes.Buffer) (*HashValue, error) {
 	var hv HashValue
-	if err := tpmutil.UnpackBuf(in, &hv.Alg); err != nil {
+	if err := tpmutil.TPM20.UnpackBuf(in, &hv.Alg); err != nil {
 		return nil, fmt.Errorf("decoding Alg: %v", err)
 	}
 	hfn, ok := hashConstructors[hv.Alg]
@@ -773,7 +773,7 @@ func decodeHashValue(in *bytes.Buffer) (*HashValue, error) {
 
 // Encode represents the given hash value as a TPMT_HA structure.
 func (hv HashValue) Encode() ([]byte, error) {
-	return tpmutil.Pack(hv.Alg, tpmutil.RawBytes(hv.Value))
+	return tpmutil.TPM20.Pack(hv.Alg, tpmutil.RawBytes(hv.Value))
 }
 
 // ClockInfo contains TPM state info included in AttestationData.

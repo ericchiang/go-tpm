@@ -25,7 +25,7 @@ import (
 // submitTPMRequest sends a structure to the TPM device file and gets results
 // back, interpreting them as a new provided structure.
 func submitTPMRequest(rw io.ReadWriter, tag uint16, ord uint32, in []interface{}, out []interface{}) (uint32, error) {
-	resp, code, err := tpmutil.RunCommand(rw, tpmutil.Tag(tag), tpmutil.Command(ord), in...)
+	resp, code, err := tpmutil.TPM12.RunCommand(rw, tpmutil.Tag(tag), tpmutil.Command(ord), in...)
 	if err != nil {
 		return 0, err
 	}
@@ -33,7 +33,7 @@ func submitTPMRequest(rw io.ReadWriter, tag uint16, ord uint32, in []interface{}
 		return uint32(code), tpmError(code)
 	}
 
-	_, err = tpmutil.Unpack(resp, out...)
+	_, err = tpmutil.TPM12.Unpack(resp, out...)
 	return 0, err
 }
 
@@ -168,7 +168,7 @@ func quote2(rw io.ReadWriter, keyHandle tpmutil.Handle, hash [20]byte, pcrs *pcr
 
 	size := binary.Size(capInfo.CapVersionFixed)
 	capInfo.VendorSpecific = make([]byte, len(capBytes)-size)
-	if _, err := tpmutil.Unpack(capBytes[:size], &capInfo.CapVersionFixed); err != nil {
+	if _, err := tpmutil.TPM12.Unpack(capBytes[:size], &capInfo.CapVersionFixed); err != nil {
 		return nil, nil, nil, nil, nil, 0, err
 	}
 

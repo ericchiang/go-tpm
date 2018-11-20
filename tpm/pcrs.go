@@ -72,7 +72,7 @@ func createPCRComposite(mask pcrMask, pcrs []byte) ([]byte, error) {
 		Selection: pcrSelection{3, mask},
 		Values:    pcrs,
 	}
-	b, err := tpmutil.Pack(pcrc)
+	b, err := tpmutil.TPM12.Pack(pcrc)
 	if err != nil {
 		return nil, err
 	}

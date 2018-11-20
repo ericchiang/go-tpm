@@ -13,10 +13,6 @@
 // limitations under the License.
 
 // Package tpmutil provides common utility functions for both TPM 1.2 and TPM 2.0 devices.
-//
-// Users should call either UseTPM12LengthPrefixSize or
-// UseTPM20LengthPrefixSize before using this package, depending on their type
-// of TPM device.
 package tpmutil
 
 import (
@@ -34,13 +30,24 @@ const maxTPMResponse = 4096
 // body (without response header) and response code from the header. Returned
 // error may be nil if response code is not RCSuccess; caller should check
 // both.
+//
+// Users must call UseTPM12LengthPrefixSize() or UseTPM20LengthPrefixSize()
+// before calling this method.
 func RunCommand(rw io.ReadWriter, tag Tag, cmd Command, in ...interface{}) ([]byte, ResponseCode, error) {
+	return defaultEncoding.RunCommand(rw, tag, cmd, in...)
+}
+
+// RunCommand executes cmd with given tag and arguments. Returns TPM response
+// body (without response header) and response code from the header. Returned
+// error may be nil if response code is not RCSuccess; caller should check
+// both.
+func (enc *Encoding) RunCommand(rw io.ReadWriter, tag Tag, cmd Command, in ...interface{}) ([]byte, ResponseCode, error) {
 	if rw == nil {
 		return nil, 0, errors.New("nil TPM handle")
 	}
 
 	ch := commandHeader{tag, 0, cmd}
-	inb, err := packWithHeader(ch, in...)
+	inb, err := enc.packWithHeader(ch, in...)
 	if err != nil {
 		return nil, 0, err
 	}

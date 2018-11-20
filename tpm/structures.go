@@ -290,7 +290,7 @@ func convertPubKey(pk crypto.PublicKey) (*pubKey, error) {
 		NumPrimes: 2,
 		Exponent:  big.NewInt(int64(pkRSA.E)).Bytes(),
 	}
-	rsakpb, err := tpmutil.Pack(rsakp)
+	rsakpb, err := tpmutil.TPM12.Pack(rsakp)
 	if err != nil {
 		return nil, err
 	}

@@ -25,10 +25,6 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-func init() {
-	tpmutil.UseTPM20LengthPrefixSize()
-}
-
 // Algorithm represents a TPM_ALG_ID value.
 type Algorithm uint16
 

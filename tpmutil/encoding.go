@@ -23,38 +23,55 @@ import (
 	"reflect"
 )
 
-// lengthPrefixSize is the size in bytes of length prefix for byte slices.
-//
-// In TPM 1.2 this is 4 bytes.
-// In TPM 2.0 this is 2 bytes.
-var lengthPrefixSize int
+// Encoding implements encoding logic for different versions of the TPM
+// specification.
+type Encoding struct {
+	// lengthPrefixSize is the size in bytes of length prefix for byte slices.
+	//
+	// In TPM 1.2 this is 4 bytes.
+	// In TPM 2.0 this is 2 bytes.
+	lengthPrefixSize int
+}
+
+var (
+	// TPM12 implements TPM 1.2 encoding.
+	TPM12 = &Encoding{
+		lengthPrefixSize: tpm12PrefixSize,
+	}
+	// TPM20 implements TPM 2.0 encoding.
+	TPM20 = &Encoding{
+		lengthPrefixSize: tpm20PrefixSize,
+	}
+
+	defaultEncoding *Encoding
+)
 
 const (
 	tpm12PrefixSize = 4
 	tpm20PrefixSize = 2
 )
 
-// UseTPM12LengthPrefixSize makes Pack/Unpack use TPM 1.2 encoding for byte
-// arrays.
+// UseTPM12LengthPrefixSize makes the package level Pack/Unpack functions use
+// TPM 1.2 encoding for byte arrays.
 func UseTPM12LengthPrefixSize() {
-	lengthPrefixSize = tpm12PrefixSize
+	defaultEncoding = TPM12
 }
 
-// UseTPM20LengthPrefixSize makes Pack/Unpack use TPM 2.0 encoding for byte
-// arrays.
+// UseTPM20LengthPrefixSize makes the package level Pack/Unpack functions use
+// TPM 2.0 encoding for byte arrays.
 func UseTPM20LengthPrefixSize() {
-	lengthPrefixSize = tpm20PrefixSize
+	defaultEncoding = TPM20
 }
 
 // packedSize computes the size of a sequence of types that can be passed to
 // binary.Read or binary.Write.
-func packedSize(elts ...interface{}) (int, error) {
+func (enc *Encoding) packedSize(elts ...interface{}) (int, error) {
 	var size int
 	for _, e := range elts {
 		v := reflect.ValueOf(e)
 		switch v.Kind() {
 		case reflect.Ptr:
-			s, err := packedSize(reflect.Indirect(v).Interface())
+			s, err := enc.packedSize(reflect.Indirect(v).Interface())
 			if err != nil {
 				return 0, err
 			}
@@ -62,7 +79,7 @@ func packedSize(elts ...interface{}) (int, error) {
 			size += s
 		case reflect.Struct:
 			for i := 0; i < v.NumField(); i++ {
-				s, err := packedSize(v.Field(i).Interface())
+				s, err := enc.packedSize(v.Field(i).Interface())
 				if err != nil {
 					return 0, err
 				}
@@ -72,7 +89,7 @@ func packedSize(elts ...interface{}) (int, error) {
 		case reflect.Slice:
 			switch s := e.(type) {
 			case []byte:
-				size += lengthPrefixSize + len(s)
+				size += enc.lengthPrefixSize + len(s)
 			case RawBytes:
 				size += len(s)
 			default:
@@ -95,9 +112,9 @@ func packedSize(elts ...interface{}) (int, error) {
 // fixed length or slices of fixed-length types and packs them into a single
 // byte array using binary.Write. It updates the CommandHeader to have the right
 // length.
-func packWithHeader(ch commandHeader, cmd ...interface{}) ([]byte, error) {
+func (enc *Encoding) packWithHeader(ch commandHeader, cmd ...interface{}) ([]byte, error) {
 	hdrSize := binary.Size(ch)
-	bodySize, err := packedSize(cmd...)
+	bodySize, err := enc.packedSize(cmd...)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't compute packed size for message body: %v", err)
 	}
@@ -114,13 +131,26 @@ func packWithHeader(ch commandHeader, cmd ...interface{}) ([]byte, error) {
 // It has one difference from encoding/binary: it encodes byte slices with a
 // prepended length, to match how the TPM encodes variable-length arrays. If
 // you wish to add a byte slice without length prefix, use RawBytes.
+//
+// Users must call UseTPM12LengthPrefixSize() or UseTPM20LengthPrefixSize()
+// before calling this method.
 func Pack(elts ...interface{}) ([]byte, error) {
-	if lengthPrefixSize == 0 {
+	if defaultEncoding == nil {
 		return nil, errors.New("lengthPrefixSize must be initialized")
 	}
+	return defaultEncoding.Pack(elts)
+}
 
+// Pack encodes a set of elements into a single byte array, using
+// encoding/binary. This means that all the elements must be encodeable
+// according to the rules of encoding/binary.
+//
+// It has one difference from encoding/binary: it encodes byte slices with a
+// prepended length, to match how the TPM encodes variable-length arrays. If
+// you wish to add a byte slice without length prefix, use RawBytes.
+func (enc *Encoding) Pack(elts ...interface{}) ([]byte, error) {
 	buf := new(bytes.Buffer)
-	if err := packType(buf, elts...); err != nil {
+	if err := enc.packType(buf, elts...); err != nil {
 		return nil, err
 	}
 
@@ -132,24 +162,24 @@ func Pack(elts ...interface{}) ([]byte, error) {
 // lengthPrefixSize size followed by the bytes. The function unpackType
 // performs the inverse operation of unpacking slices stored in this manner and
 // using encoding/binary for everything else.
-func packType(buf io.Writer, elts ...interface{}) error {
+func (enc *Encoding) packType(buf io.Writer, elts ...interface{}) error {
 	for _, e := range elts {
 		v := reflect.ValueOf(e)
 		switch v.Kind() {
 		case reflect.Ptr:
-			if err := packType(buf, reflect.Indirect(v).Interface()); err != nil {
+			if err := enc.packType(buf, reflect.Indirect(v).Interface()); err != nil {
 				return err
 			}
 		case reflect.Struct:
 			for i := 0; i < v.NumField(); i++ {
-				if err := packType(buf, v.Field(i).Interface()); err != nil {
+				if err := enc.packType(buf, v.Field(i).Interface()); err != nil {
 					return err
 				}
 			}
 		case reflect.Slice:
 			switch s := e.(type) {
 			case []byte:
-				switch lengthPrefixSize {
+				switch enc.lengthPrefixSize {
 				case tpm20PrefixSize:
 					if err := binary.Write(buf, binary.BigEndian, uint16(len(s))); err != nil {
 						return err
@@ -159,7 +189,7 @@ func packType(buf io.Writer, elts ...interface{}) error {
 						return err
 					}
 				default:
-					return fmt.Errorf("lengthPrefixSize is %d, must be either 2 or 4", lengthPrefixSize)
+					return fmt.Errorf("lengthPrefixSize is %d, must be either 2 or 4", enc.lengthPrefixSize)
 				}
 				if err := binary.Write(buf, binary.BigEndian, s); err != nil {
 					return err
@@ -184,9 +214,18 @@ func packType(buf io.Writer, elts ...interface{}) error {
 
 // Unpack is a convenience wrapper around UnpackBuf. Unpack returns the number
 // of bytes read from b to fill elts and error, if any.
+//
+// Users must call UseTPM12LengthPrefixSize() or UseTPM20LengthPrefixSize()
+// before calling this method.
 func Unpack(b []byte, elts ...interface{}) (int, error) {
+	return defaultEncoding.Unpack(b, elts...)
+}
+
+// Unpack is a convenience wrapper around UnpackBuf. Unpack returns the number
+// of bytes read from b to fill elts and error, if any.
+func (enc *Encoding) Unpack(b []byte, elts ...interface{}) (int, error) {
 	buf := bytes.NewBuffer(b)
-	err := UnpackBuf(buf, elts...)
+	err := enc.UnpackBuf(buf, elts...)
 	read := len(b) - buf.Len()
 	return read, err
 }
@@ -196,7 +235,22 @@ func Unpack(b []byte, elts ...interface{}) (int, error) {
 // slice by first reading an integer with lengthPrefixSize bytes, then reading
 // that many bytes. It assumes that incoming values are pointers to values so
 // that, e.g., underlying slices can be resized as needed.
+//
+// Users must call UseTPM12LengthPrefixSize() or UseTPM20LengthPrefixSize()
+// before calling this method.
 func UnpackBuf(buf io.Reader, elts ...interface{}) error {
+	if defaultEncoding == nil {
+		return nil, errors.New("lengthPrefixSize must be initialized")
+	}
+	return defaultEncoding.UnpackBuf(buf, elts)
+}
+
+// UnpackBuf recursively unpacks types from a reader just as encoding/binary
+// does under binary.BigEndian, but with one difference: it unpacks a byte
+// slice by first reading an integer with lengthPrefixSize bytes, then reading
+// that many bytes. It assumes that incoming values are pointers to values so
+// that, e.g., underlying slices can be resized as needed.
+func (enc *Encoding) UnpackBuf(buf io.Reader, elts ...interface{}) error {
 	for _, e := range elts {
 		v := reflect.ValueOf(e)
 		k := v.Kind()
@@ -213,7 +267,7 @@ func UnpackBuf(buf io.Reader, elts ...interface{}) error {
 		case reflect.Struct:
 			// Decompose the struct and copy over the values.
 			for i := 0; i < iv.NumField(); i++ {
-				if err := UnpackBuf(buf, iv.Field(i).Addr().Interface()); err != nil {
+				if err := enc.UnpackBuf(buf, iv.Field(i).Addr().Interface()); err != nil {
 					return err
 				}
 			}
@@ -230,21 +284,21 @@ func UnpackBuf(buf io.Reader, elts ...interface{}) error {
 				}
 				size = int(tmpSize)
 			// TPM 2.0
-			case lengthPrefixSize == tpm20PrefixSize:
+			case enc.lengthPrefixSize == tpm20PrefixSize:
 				var tmpSize uint16
 				if err := binary.Read(buf, binary.BigEndian, &tmpSize); err != nil {
 					return err
 				}
 				size = int(tmpSize)
 			// TPM 1.2
-			case lengthPrefixSize == tpm12PrefixSize:
+			case enc.lengthPrefixSize == tpm12PrefixSize:
 				var tmpSize uint32
 				if err := binary.Read(buf, binary.BigEndian, &tmpSize); err != nil {
 					return err
 				}
 				size = int(tmpSize)
 			default:
-				return fmt.Errorf("lengthPrefixSize is %d, must be either 2 or 4", lengthPrefixSize)
+				return fmt.Errorf("lengthPrefixSize is %d, must be either 2 or 4", enc.lengthPrefixSize)
 			}
 
 			// A zero size is used by the TPM to signal that certain elements

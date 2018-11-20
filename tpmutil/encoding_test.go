@@ -22,10 +22,6 @@ import (
 	"testing"
 )
 
-func init() {
-	UseTPM12LengthPrefixSize()
-}
-
 type invalidPacked struct {
 	A []int
 	B uint32
@@ -61,7 +57,7 @@ func testEncodingInvalidSlices(t *testing.T, f func(io.Writer, interface{}) erro
 
 func TestEncodingPackedSizeInvalid(t *testing.T) {
 	f := func(w io.Writer, i interface{}) error {
-		_, err := packedSize(i)
+		_, err := TPM12.packedSize(i)
 		return err
 	}
 
@@ -70,7 +66,7 @@ func TestEncodingPackedSizeInvalid(t *testing.T) {
 
 func TestEncodingPackTypeInvalid(t *testing.T) {
 	f := func(w io.Writer, i interface{}) error {
-		return packType(w, i)
+		return TPM12.packType(w, i)
 	}
 
 	testEncodingInvalidSlices(t, f)
@@ -106,7 +102,7 @@ func TestEncodingPackedSize(t *testing.T) {
 		{[]byte(nil), 4},
 	}
 	for _, tt := range tests {
-		if s, err := packedSize(tt.in); err != nil || s != tt.want {
+		if s, err := TPM12.packedSize(tt.in); err != nil || s != tt.want {
 			t.Errorf("packedSize(%#v): %d, want %d", tt.in, s, tt.want)
 		}
 	}
@@ -125,7 +121,7 @@ func TestEncodingPackType(t *testing.T) {
 		RawBytes(buf),
 	}
 	for _, i := range inputs {
-		if err := packType(ioutil.Discard, i); err != nil {
+		if err := TPM12.packType(ioutil.Discard, i); err != nil {
 			t.Errorf("packType(%#v): %v", i, err)
 		}
 	}
@@ -140,7 +136,7 @@ func TestEncodingPackTypeWriteFail(t *testing.T) {
 		{3, []byte(nil)},
 	}
 	for _, tt := range tests {
-		if err := packType(&limitedDiscard{tt.limit}, tt.in); err == nil {
+		if err := TPM12.packType(&limitedDiscard{tt.limit}, tt.in); err == nil {
 			t.Errorf("packType(%#v) with write size limit %d returned nil, want error", tt.in, tt.limit)
 		}
 	}
@@ -167,7 +163,7 @@ func (l *limitedDiscard) Write(p []byte) (n int, err error) {
 func TestEncodingCommandHeaderInvalidBody(t *testing.T) {
 	var invalid []int
 	ch := commandHeader{1, 0, 2}
-	_, err := packWithHeader(ch, invalid)
+	_, err := TPM12.packWithHeader(ch, invalid)
 	if err == nil {
 		t.Fatal("packWithHeader incorrectly packed a body that with an invalid int slice member")
 	}
@@ -176,7 +172,7 @@ func TestEncodingCommandHeaderInvalidBody(t *testing.T) {
 func TestEncodingInvalidPack(t *testing.T) {
 	var invalid []int
 	ch := commandHeader{1, 0, 2}
-	_, err := packWithHeader(ch, invalid)
+	_, err := TPM12.packWithHeader(ch, invalid)
 	if err == nil {
 		t.Fatal("packWithHeader incorrectly packed a body that with an invalid int slice member")
 	}
@@ -192,7 +188,7 @@ func TestEncodingCommandHeaderEncoding(t *testing.T) {
 	var c uint32 = 137
 	in := c
 
-	b, err := packWithHeader(ch, in)
+	b, err := TPM12.packWithHeader(ch, in)
 	if err != nil {
 		t.Fatal("Couldn't pack the bytes:", err)
 	}
